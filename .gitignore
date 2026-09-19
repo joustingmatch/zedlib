@@ -1,0 +1,27 @@
+# Local test/build output
+__pycache__/
+*.pyc
+tests/.*.luau
+dist/
+sourcemap.json
+Packages/
+.build/
+
+# Runtime data
+Zedlib/
+*ExampleLibrary/
+settings/
+themes/
+*.log
+
+# Editors and temporary exports
+.vscode/
+.idea/
+*.tmp
+*.bak
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+.DS_Store
+Thumbs.db

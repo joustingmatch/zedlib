@@ -1,0 +1,59 @@
+--!strict
+local Metrics = require(script.Metrics)
+local Tokens = require(script.Tokens)
+local Typography = require(script.Typography)
+local Materials = require(script.Materials)
+local Popup = require(script.Popup)
+local Controls = require(script.Controls)
+local Element = require(script.Element)
+local Label = require(script.Label)
+local Divider = require(script.Divider)
+local Button = require(script.Button)
+local Dropdown = require(script.Dropdown)
+local Input = require(script.Input)
+local ValueControl = require(script.ValueControl)
+local Toggle = require(script.Toggle)
+local Slider = require(script.Slider)
+local ContextMenu = require(script.ContextMenu)
+local KeyPicker = require(script.KeyPicker)
+local ColorPicker = require(script.ColorPicker)
+local Container = require(script.Container)
+local UX = require(script.UX)
+local Groupbox = require(script.Groupbox)
+local Shell = require(script.Shell)
+
+export type Shell = Shell.Shell
+export type Tab = Shell.Tab
+export type SubTab = Shell.SubTab
+export type Groupbox = Groupbox.Groupbox
+export type Label = Label.Label
+export type Divider = Divider.Divider
+export type Button = Button.Button
+export type Dropdown = Dropdown.Dropdown
+export type Input = Input.Input
+
+return {
+    Metrics = Metrics,
+    Tokens = Tokens,
+    Typography = Typography,
+    Materials = Materials,
+    Popup = Popup,
+    Controls = Controls,
+    Element = Element,
+    Label = Label,
+    Divider = Divider,
+    Button = Button,
+    Dropdown = Dropdown,
+    Input = Input,
+    ValueControl = ValueControl,
+    Toggle = Toggle,
+    Slider = Slider,
+    ContextMenu = ContextMenu,
+    KeyPicker = KeyPicker,
+    ColorPicker = ColorPicker,
+    Container = Container,
+    UX = UX,
+    Groupbox = Groupbox,
+    Shell = Shell,
+    Create = Shell.new,
+}

@@ -1,0 +1,3 @@
+tests/.*.luau
+Library.lua
+addons/*.lua

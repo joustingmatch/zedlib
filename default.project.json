@@ -1,0 +1,18 @@
+{
+  "name": "Zedlib",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Zedlib": {
+        "$path": "init.luau",
+        "src": {
+          "$path": "src"
+        },
+        "Library.d": {
+          "$path": "Library.d.luau"
+        }
+      }
+    }
+  }
+}

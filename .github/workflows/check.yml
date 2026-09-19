@@ -1,0 +1,24 @@
+name: Check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: 2.5.2
+          args: --check src tests Example.lua init.luau Library.d.luau
+      - name: Install Luau
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download 0.713 --repo luau-lang/luau --pattern luau-ubuntu.zip --dir "$RUNNER_TEMP/luau"
+          unzip "$RUNNER_TEMP/luau/luau-ubuntu.zip" -d "$RUNNER_TEMP/luau"
+          chmod +x "$RUNNER_TEMP/luau/luau"
+          echo "$RUNNER_TEMP/luau" >> "$GITHUB_PATH"
+      - run: python tools/check.py
