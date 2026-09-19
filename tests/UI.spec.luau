@@ -171,6 +171,82 @@ test("wrapped labels measure against the content width and resize the box", func
     library:Unload()
 end)
 
+test("row hairlines are not children of the frame the row list owns", function()
+    local library, shell = mount()
+    local box = shell:GetTab("Home"):AddLeftGroupbox("Hairlines")
+    box:AddToggle("h_a", { Text = "A" })
+    box:AddToggle("h_b", { Text = "B" })
+    box:AddToggle("h_c", { Text = "C" })
+
+    -- A UIListLayout positions EVERY GuiObject child of its frame. A hairline
+    -- parented beside the rows is therefore laid out as if it were a row --
+    -- and because hairlines carry no LayoutOrder they sort as zero, ahead of
+    -- every real element, so the engine stacks them all at the top of the card
+    -- and discards the offsets the groupbox computed. They live on their own
+    -- unlaid-out layer for exactly that reason.
+    local laidOut = nil
+    for _, child in box.Container:GetChildren() do
+        if child.ClassName == "UIListLayout" then
+            laidOut = child
+        end
+    end
+    assert(laidOut, "the container is expected to own the row list")
+
+    local seen = 0
+    for _, divider in box.Dividers do
+        assert(divider.Parent ~= box.Container, "a hairline is inside the list-laid-out frame")
+        assert(divider.Parent == box.DividerLayer, "a hairline is not on the hairline layer")
+        seen += 1
+    end
+    assert(seen >= 2, "three rows should have produced at least two hairlines")
+
+    -- The layer tracks the container exactly, or the offsets mean nothing.
+    assert(box.DividerLayer.Position.Y.Offset == box.Container.Position.Y.Offset)
+    assert(box.DividerLayer.Size.Y.Offset == box.Container.Size.Y.Offset)
+
+    library:Unload()
+end)
+
+test("nothing a control draws escapes the top or bottom of its own row", function()
+    local library, shell = mount()
+    local box = shell:GetTab("Home"):AddLeftGroupbox("Containment")
+
+    -- One of everything that positions a body against its row, including the
+    -- key picker, whose pill was anchored on its own centre at the row's top
+    -- edge and so hung half of itself above the card.
+    box:AddKeyPicker("c_key", { Text = "Toggle menu", Default = "RightShift", Mode = "Toggle" })
+    box:AddToggle("c_toggle", { Text = "Toggle", Description = "With a description" })
+    box:AddSlider("c_slider", { Text = "Slider", Min = 0, Max = 10, Default = 5, Rounding = 0 })
+    box:AddInput("c_input", { Text = "Input" })
+    box:AddDropdown("c_drop", { Text = "Pick", Values = { "A", "B" } })
+    box:AddColorPicker("c_colour", { Text = "Colour" })
+    box:AddButton({ Text = "Button" })
+
+    for _, element in box.Elements do
+        local row = element.Holder
+        local height = element.LayoutHeight
+        for _, child in row:GetChildren() do
+            if child.Size ~= nil and child.Position ~= nil and child.Visible then
+                local childHeight = child.Size.Y.Scale * height + child.Size.Y.Offset
+                local anchorY = if child.AnchorPoint then child.AnchorPoint.Y else 0
+                local top = child.Position.Y.Scale * height + child.Position.Y.Offset - anchorY * childHeight
+                local label = string.format("%s / %s", tostring(element.Type), tostring(child.Name))
+                -- An interaction pad is allowed to overflow: that is its whole
+                -- job, and it draws nothing.
+                if child.Name ~= "PointerTarget" then
+                    assert(top >= 0, label .. " starts " .. tostring(-top) .. " above its row")
+                    assert(
+                        top + childHeight <= height,
+                        label .. " ends " .. tostring(top + childHeight - height) .. " below its row"
+                    )
+                end
+            end
+        end
+    end
+
+    library:Unload()
+end)
+
 test("a description changes the header height and only reserves space when set", function()
     local library, shell = mount()
     local box = shell:GetTab("Home"):AddLeftGroupbox("Header")

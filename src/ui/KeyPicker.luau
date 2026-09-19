@@ -123,10 +123,17 @@ function KeyPicker.new(host: any, parent: Instance, options: any, scope: any): a
     end
     self.Label.Size = UDim2.new(1, -Metrics.Core.KeyWidth - Metrics.Spacing.S, 1, 0)
     self.Key = Button.new(host, self.Holder, { Text = "" }, self.Resources)
+    -- Anchored on its own right edge and vertical centre, so it sits flush with
+    -- the row's right edge and on the row's centre line.
+    --
+    -- This was assigned twice, and the second assignment -- a leftover written
+    -- for an unanchored holder -- won. With the anchor still at (1, 0.5) it put
+    -- the pill a full key width in from the right AND centred it on the row's
+    -- TOP edge, so half of it hung above the row. On the first row of a card
+    -- that is half a pill floating above the card itself.
     self.Key.Holder.AnchorPoint = Vector2.new(1, 0.5)
     self.Key.Holder.Position = UDim2.new(1, 0, 0.5, 0)
     self.Key.Holder.Size = UDim2.fromOffset(Metrics.Core.KeyWidth, Metrics.Control.Height)
-    self.Key.Holder.Position = UDim2.new(1, -Metrics.Core.KeyWidth, 0, 0)
     local manager = KeyPicker.Manager(host)
     table.insert(manager.Items, self)
     function self:Refresh()

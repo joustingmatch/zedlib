@@ -49,6 +49,7 @@ export type Groupbox = typeof(setmetatable(
         Title: TextLabel?,
         Descriptor: TextLabel?,
         Container: Frame,
+        DividerLayer: Frame,
         Dividers: { Frame },
 
         Width: number,
@@ -146,6 +147,7 @@ function Groupbox.new(host: Controls.Host, params: Params): Groupbox
         Title = nil,
         Descriptor = nil,
         Container = nil :: any,
+        DividerLayer = nil :: any,
         Dividers = {},
 
         Width = width,
@@ -185,6 +187,39 @@ function Groupbox.new(host: Controls.Host, params: Params): Groupbox
         SortOrder = Enum.SortOrder.LayoutOrder,
         Padding = UDim.new(0, geometry.ElementSpacing),
         Parent = self.Container,
+    }, resources)
+
+    -- The row hairlines get a layer of their own, overlaying the container but
+    -- OUTSIDE it.
+    --
+    -- They used to be children of the container itself, which is the frame the
+    -- UIListLayout owns -- and a list layout positions every GuiObject child it
+    -- has, including ones that were never meant to be rows. The hairlines carry
+    -- no LayoutOrder, so they sorted as zero, ahead of every real element, and
+    -- the layout stacked all of them at the top of the card and threw away the
+    -- offsets _ApplyDividers had just computed. That stack of one pixel frames
+    -- is the grey band across the top of a card, and it is also why the
+    -- separators never lined up with the row boundaries they name.
+    --
+    -- This layer has no layout, so a position written here is the position
+    -- used. It carries the same padding as the container, so the offsets
+    -- _ApplyDividers computes are measured from the same origin as before.
+    self.DividerLayer = library:Create("Frame", {
+        Name = "RowDividers",
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 0),
+        ZIndex = Materials.Z.Edge,
+        ClipsDescendants = false,
+        Parent = holder.Instance,
+    }, resources) :: Frame
+
+    library:Create("UIPadding", {
+        PaddingLeft = UDim.new(0, geometry.PaddingLeft),
+        PaddingRight = UDim.new(0, geometry.PaddingRight),
+        PaddingTop = UDim.new(0, geometry.PaddingTop),
+        PaddingBottom = UDim.new(0, geometry.PaddingBottom),
+        Parent = self.DividerLayer,
     }, resources)
 
     wrapper.Visible = self.Visible
@@ -331,7 +366,7 @@ function Groupbox._ApplyDividers(self: Groupbox, boundaries: { number })
                 BorderSizePixel = 0,
                 Size = UDim2.new(1, 0, 0, Metrics.Groupbox.RowDivider),
                 ZIndex = Materials.Z.Edge,
-                Parent = self.Container,
+                Parent = self.DividerLayer,
             }, self.Resources) :: Frame
             library:RegisterProperty(divider, { BackgroundColor3 = "Border.Divider" }, self.Resources)
             pool[index] = divider
@@ -380,6 +415,8 @@ function Groupbox._Apply(self: Groupbox)
     self.Height = self.HeaderHeight + contentHeight
     self.Container.Position = UDim2.fromOffset(0, self.HeaderHeight)
     self.Container.Size = UDim2.new(1, 0, 0, contentHeight)
+    self.DividerLayer.Position = self.Container.Position
+    self.DividerLayer.Size = self.Container.Size
 
     -- The card is placed below its label, and the wrapper reports both.
     self.Holder.Instance.Position = UDim2.fromOffset(0, self.LabelHeight)
