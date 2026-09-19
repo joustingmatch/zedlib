@@ -29,6 +29,8 @@ function ContextMenu.new(host: any, trigger: GuiObject, options: any, parentScop
     self.Frame = self.Surface.Instance
     self.Frame.Visible = false
     self.Frame.ClipsDescendants = true
+    self.Frame.Active = true
+    self.Hovered = Popup.TrackHover(host.Library, self.Frame, scope)
     scope:Add(function()
         self:Close()
         self.Destroyed = true
@@ -93,6 +95,9 @@ function ContextMenu.Toggle(self: any)
     end
 end
 function ContextMenu.ContainsPoint(self: any, point: Vector2): boolean
+    if self.Hovered and self.Hovered() then
+        return true
+    end
     return Popup.Contains(self.Frame, point) or Popup.Contains(self.Trigger, point)
 end
 function ContextMenu.SetSize(self: any, width: number, height: number)

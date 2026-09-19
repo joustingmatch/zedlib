@@ -159,9 +159,13 @@ test("wrapped labels measure against the content width and resize the box", func
     assert(long.LayoutHeight < narrow, "a wider column needs fewer lines")
     assertHeight(box, "widened")
 
-    -- An unwrapped label is one measured line regardless of how long it is.
+    -- An unwrapped label is one measured line regardless of how long it is,
+    -- plus the row padding that keeps it off the rows above and below it.
     short:SetText(string.rep("no wrapping here ", 20))
-    assert(short.LayoutHeight == short.Host.Typography:LineHeight(short.Host.Typography.Roles.Label))
+    assert(
+        short.LayoutHeight
+            == short.Host.Typography:LineHeight(short.Host.Typography.Roles.Label) + Metrics.Label.PaddingY * 2
+    )
     assertHeight(box, "retexted")
 
     library:Unload()

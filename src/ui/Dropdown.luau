@@ -67,6 +67,7 @@ export type Dropdown = typeof(setmetatable(
         _VisibleCount: number,
         _Dirty: boolean,
         _OpenScope: Types.Scope?,
+        _PopupHovered: (() -> boolean)?,
     },
     Dropdown
 ))
@@ -162,6 +163,7 @@ function Dropdown.new(host: Controls.Host, parent: Instance, options: Options?, 
         _VisibleCount = 0,
         _Dirty = true,
         _OpenScope = nil,
+        _PopupHovered = nil,
     }, Dropdown)
 
     self:_Build(parent, config)
@@ -502,7 +504,8 @@ function Dropdown._UpdateVisual(self: Dropdown, duration: number)
         context.Animator,
         self.Chevron.Frame,
         { Rotation = if self.IsOpen then 180 else 0 },
-        if duration > 0 then Metrics.Motion.Chevron else 0
+        if duration > 0 then Metrics.Motion.Chevron else 0,
+        "Travel"
     )
 end
 
@@ -746,6 +749,9 @@ function Dropdown._EnsurePopup(self: Dropdown): boolean
     })
     popup.Instance.Active = true
     self._Popup = popup
+    -- See Popup.TrackHover: the rectangle test alone loses the click that lands
+    -- in the frame after a reposition or a filter reflow.
+    self._PopupHovered = Popup.TrackHover(library, popup.Instance, scope)
 
     local listTop = config.PopupPadding
     if self.Searchable then
@@ -956,6 +962,10 @@ function Dropdown.ContainsPoint(self: Dropdown, point: Vector2): boolean
         return false
     end
     if Popup.Contains(self.Trigger.Instance, point) then
+        return true
+    end
+    local hovered = self._PopupHovered
+    if hovered and hovered() then
         return true
     end
     local popup = self._Popup

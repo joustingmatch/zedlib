@@ -101,13 +101,32 @@ function Slider.new(host: any, parent: Instance, options: any, scope: any): any
         ZIndex = Materials.Z.Edge,
         Parent = self.Track,
     }, self.Resources)
+    -- Scale, not offset: the thumb grows under the pointer, and a fixed offset
+    -- radius would turn it into a rounded square on the way.
     host.Library:Create("UICorner", {
-        CornerRadius = UDim.new(0, math.floor(geometry.ThumbSize / 2)),
+        CornerRadius = UDim.new(0.5, 0),
         Parent = self.Thumb,
     }, self.Resources)
     host.Library:RegisterProperty(self.Thumb, { BackgroundColor3 = "Accent.Base" }, self.Resources)
 
     Element.SetHeight(self, Metrics.Row.TallHeight)
+    self.Dragging = false
+
+    -- The thumb is the only part of a slider that reports the control's state,
+    -- so it reports all three of them. A track that never acknowledges the
+    -- pointer is a track the user cannot tell is live, which is most of why
+    -- these felt unresponsive even when they were working.
+    local function thumbSize(): number
+        if self.Disabled then
+            return geometry.ThumbSize
+        elseif self.Dragging then
+            return geometry.ThumbPressed
+        elseif self.Hovered then
+            return geometry.ThumbHover
+        end
+        return geometry.ThumbSize
+    end
+
     function self:Refresh()
         ValueControl.Refresh(self)
         if self.Destroyed then
@@ -118,6 +137,14 @@ function Slider.new(host: any, parent: Instance, options: any, scope: any): any
         self.Fill.BackgroundTransparency = if self.Disabled then 0.6 else 0
         self.Thumb.Position = UDim2.fromScale(alpha, 0.5)
         self.Thumb.BackgroundTransparency = if self.Disabled then 0.6 else 0
+        local size = thumbSize()
+        Materials.Animate(
+            host.Context.Animator,
+            self.Thumb,
+            { Size = UDim2.fromOffset(size, size) },
+            Metrics.Motion.Hover,
+            "Travel"
+        )
         self.Entry:SetDisabled(self.Disabled)
         if not self.Entry.Focused then
             self.Entry:_Push(self.Prefix .. string.format("%." .. self.Rounding .. "f", self.Value) .. self.Suffix)
@@ -158,31 +185,69 @@ function Slider.new(host: any, parent: Instance, options: any, scope: any): any
     host.Library:Connect(self.Entry.Box.FocusLost, function()
         self:Refresh()
     end, self.Resources)
-    -- On a touch device the drag starts from an invisible pad taller than the
-    -- track. It is full width, so the position arithmetic is unchanged; only
-    -- the region that accepts a finger is larger.
-    self.TouchTarget = Controls.TouchTarget(host, self.Track, self.Resources)
-    local grip = self.TouchTarget or self.Track
-    host.Library:Connect(grip.InputBegan, function(input)
-        if self:CanInteract() and host.Library:IsPrimaryPointer(input) then
-            host:BeginInteraction()
-            self:Drag(self.Track, input, function(x)
-                self:SetValue(self.Min + x * (self.Max - self.Min))
-            end)
+    -- The drag starts from an invisible pad taller than the track, on every
+    -- device. The pad is full width, so the position arithmetic is unchanged;
+    -- only the region that accepts a pointer is larger. Without it the target
+    -- is the four pixel track itself, and most presses aimed at a slider miss.
+    self.TouchTarget = Controls.TouchTarget(host, self.Track, self.Resources, geometry.GrabHeight)
+    -- Both surfaces are bound, not just the pad. The pad is what the user
+    -- actually hits, but the track is still a real button underneath it, and a
+    -- press that reaches the track directly must behave identically rather than
+    -- depending on which of the two the engine happened to route the input to.
+    local grips: { any } = { self.Track }
+    if self.TouchTarget then
+        table.insert(grips, self.TouchTarget)
+    end
+
+    for _, grip in grips do
+        host.Library:Connect(grip.MouseEnter, function()
+            self.Hovered = true
+            self:Refresh()
+        end, self.Resources)
+        host.Library:Connect(grip.MouseLeave, function()
+            self.Hovered = false
+            self:Refresh()
+        end, self.Resources)
+
+        host.Library:Connect(grip.InputBegan, function(input)
+            if self:CanInteract() and host.Library:IsPrimaryPointer(input) then
+                host:BeginInteraction()
+                self.Dragging = true
+                self:Refresh()
+                self:Drag(self.Track, input, function(x)
+                    self:SetValue(self.Min + x * (self.Max - self.Min))
+                end)
+                -- Drag() owns a scope for the pointer session; the thumb has to
+                -- stand down when that session ends however it ends.
+                if self._Drag then
+                    self._Drag:Add(function()
+                        self.Dragging = false
+                        if not self.Destroyed then
+                            self:Refresh()
+                        end
+                    end)
+                end
+            end
+        end, self.Resources)
+
+        -- Arrow keys nudge by one rounding step; the wheel does the same. A slider
+        -- the pointer is already over is a slider the wheel should adjust.
+        local function nudge(direction: number)
+            if self:CanInteract() and direction ~= 0 then
+                self:SetValue(self.Value + direction * 10 ^ -self.Rounding)
+            end
         end
-    end, self.Resources)
-    host.Library:Connect(self.Track.InputBegan, function(input)
-        if not self:CanInteract() then
-            return
-        end
-        local direction = if input.KeyCode == Enum.KeyCode.Left
-            then -1
-            elseif input.KeyCode == Enum.KeyCode.Right then 1
-            else 0
-        if direction ~= 0 then
-            self:SetValue(self.Value + direction * 10 ^ -self.Rounding)
-        end
-    end, self.Resources)
+        host.Library:Connect(grip.InputBegan, function(input)
+            nudge(
+                if input.KeyCode == Enum.KeyCode.Left then -1 elseif input.KeyCode == Enum.KeyCode.Right then 1 else 0
+            )
+        end, self.Resources)
+        host.Library:Connect(grip.InputChanged, function(input)
+            if input.UserInputType == Enum.UserInputType.MouseWheel then
+                nudge(if input.Position.Z > 0 then 1 elseif input.Position.Z < 0 then -1 else 0)
+            end
+        end, self.Resources)
+    end
     self:Refresh()
     return self
 end

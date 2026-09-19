@@ -2490,8 +2490,9 @@ Metrics.HeaderTabs = {
     -- the two share a baseline exactly.
     RuleThickness = 1,
     -- 0 left-aligns the strip to the content body, 0.5 centres it, 1 right-
-    -- aligns it. Sub-navigation is left-aligned to the page it governs.
-    Alignment = 0,
+    -- aligns it. Centred: the strip reads as the page set's own navigation
+    -- rather than as a ragged left-hand list that ends in dead space.
+    Alignment = 0.5,
 }
 
 --// Tabboxes: the in-card tab strip a Container draws across the top of its own
@@ -2544,8 +2545,13 @@ Metrics.Groupbox = {
     -- each row owns its own breathing room through its height.
     PaddingLeft = 16,
     PaddingRight = 16,
-    PaddingTop = 0,
-    PaddingBottom = 0,
+    -- Rows are separated by a hairline at their shared boundary, so the list
+    -- spacing between them is zero. The card still owes its FIRST and LAST row
+    -- air against its own edge: without it the top row's ascenders are clipped
+    -- by the card's corner radius, which is exactly the "text cut off at the
+    -- top of the box" artifact.
+    PaddingTop = 6,
+    PaddingBottom = 6,
     ElementSpacing = 0,
 
     -- Between two cards stacked in the same column, label included.
@@ -2586,6 +2592,13 @@ Metrics.Toggle = {
 Metrics.Slider = {
     TrackThickness = 4,
     ThumbSize = 11,
+    -- The thumb grows under the pointer. Feedback that the control is live
+    -- before the value has moved at all.
+    ThumbHover = 13,
+    ThumbPressed = 15,
+    -- The invisible band that actually accepts the pointer, centred on the
+    -- visible track. A mouse can hit fourteen pixels; it should not have to.
+    GrabHeight = 24,
     -- Air between the label line and the track.
     LabelGap = 8,
     ValuePillWidth = 36,
@@ -2609,6 +2622,10 @@ Metrics.Button = {
 Metrics.Label = {
     -- Extra height a wrapped label adds per line beyond what measurement reports.
     LineGap = 0,
+    -- Air above and below a label's text inside its own row. A label measured
+    -- at exactly its line height sits flush against the row above and below it,
+    -- which reads as two overlapping strings rather than two rows.
+    PaddingY = 7,
 }
 
 --// Dividers. Structure without another box: a hairline with deliberate air
@@ -2719,17 +2736,34 @@ Metrics.Text = {
 -- library at 1.5 scale is already past that.
 Metrics.Touch = {
     MinTarget = 30,
+    -- The same idea for a mouse. Smaller than the touch floor, because a
+    -- pointer is precise, but never as small as the visible hairline.
+    MinPointerTarget = 22,
 }
 
 --// Motion (seconds). Restrained by intent; 0 disables a transition.
 Metrics.Motion = {
-    Hover = 0.09,
-    Select = 0.11,
-    Focus = 0.09,
-    Popup = 0.10,
-    Chevron = 0.12,
+    Hover = 0.12,
+    Select = 0.18,
+    Focus = 0.12,
+    Popup = 0.16,
+    Chevron = 0.18,
     -- The toggle knob and the dock indicator travel; they do not pop.
-    Knob = 0.13,
+    Knob = 0.22,
+}
+
+--// Motion curves. A tween's shape carries as much of its character as its
+-- duration does, and one curve applied to everything is why an interface reads
+-- as flat however long the tweens are.
+--
+-- Named by intent, resolved in Materials.Animate. A property change that is a
+-- state report (a colour, a transparency) settles; a property change that is a
+-- physical movement (a knob, an indicator, a thumb) overshoots very slightly
+-- and comes back, which is what makes it read as an object rather than a value.
+Metrics.Curve = {
+    Settle = { Style = Enum.EasingStyle.Quint, Direction = Enum.EasingDirection.Out },
+    Travel = { Style = Enum.EasingStyle.Back, Direction = Enum.EasingDirection.Out },
+    Emerge = { Style = Enum.EasingStyle.Cubic, Direction = Enum.EasingDirection.Out },
 }
 
 --// Derived geometry. Functions rather than cached values so edits above stay
@@ -3492,7 +3526,16 @@ local function setDirect(library: any, instance: Instance, properties: { [string
     end
 end
 
-function Materials.Animate(animator: Animator, instance: Instance, properties: { [string]: any }, duration: number)
+-- `curve` names a shape from Metrics.Curve rather than supplying one, so the
+-- library has three motion characters in one place instead of a TweenInfo
+-- improvised at every call site. Omitted, a change settles.
+function Materials.Animate(
+    animator: Animator,
+    instance: Instance,
+    properties: { [string]: any },
+    duration: number,
+    curve: string?
+)
     local previous = animator.Slots[instance]
     if previous then
         previous()
@@ -3510,7 +3553,8 @@ function Materials.Animate(animator: Animator, instance: Instance, properties: {
         return
     end
 
-    local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local shape = Metrics.Curve[curve or "Settle"] or Metrics.Curve.Settle
+    local info = TweenInfo.new(duration, shape.Style, shape.Direction)
     local ok, tween = pcall(function()
         return TweenService:Create(instance, info, properties)
     end)
@@ -4044,6 +4088,36 @@ function Popup.GuiInset(): Vector2
     return Vector2.zero
 end
 
+-- Keeps a live "the pointer is over this surface" flag on a frame, and returns
+-- a reader for it.
+--
+-- The geometric hit test below is correct and still the primary answer, but it
+-- reads AbsolutePosition, and AbsolutePosition is a RENDERED value: it is one
+-- frame stale every time a popup has just been placed, resized, reflowed by a
+-- search filter, or carried along by a window drag. In that one frame an
+-- outside-click handler tests the click against where the popup used to be,
+-- decides the click was outside, and closes the popup the user was aiming at.
+-- That is the "I click an item and it closes instead of selecting" bug.
+--
+-- MouseEnter/MouseLeave are maintained by the engine against the geometry it
+-- actually rendered, so they cannot be stale in the way a coordinate read can.
+-- The two together: hover answers for a mouse, the rectangle answers for touch.
+function Popup.TrackHover(library: any, frame: GuiObject, scope: Types.Scope): () -> boolean
+    local inside = false
+    library:Connect(frame.MouseEnter, function()
+        inside = true
+    end, scope)
+    library:Connect(frame.MouseLeave, function()
+        inside = false
+    end, scope)
+    scope:Add(function()
+        inside = false
+    end)
+    return function(): boolean
+        return inside and frame.Visible
+    end
+end
+
 function Popup.PointerPoint(input: InputObject): Vector2
     return Vector2.new(input.Position.X, input.Position.Y) + Popup.GuiInset()
 end
@@ -4363,8 +4437,8 @@ end
 
 --// Touch targets ------------------------------------------------------------
 
--- An invisible interaction area over a control that is too thin to hit with a
--- finger, returned as the thing to bind input to instead of the visible one.
+-- An invisible interaction area over a control that is too thin to hit, returned
+-- as the thing to bind input to instead of the visible one.
 --
 -- It is a child of the target and is full width, so the horizontal arithmetic a
 -- drag does against it is identical to the arithmetic against the target. Only
@@ -4372,23 +4446,23 @@ end
 -- displacing anything, because rows do not clip and layout heights are declared
 -- by the control rather than measured from its descendants.
 --
--- Returns nil on a device that is not touch-driven, and the caller then binds to
--- the visible control as before. There is deliberately no way to turn this on
--- for a mouse: a mouse can hit fourteen pixels, and an oversized invisible
--- button would only steal hover from the row above.
-function Controls.TouchTarget(host: Host, target: GuiObject, scope: Types.Scope): GuiObject?
+-- This used to return nil for a mouse, on the reasoning that a mouse can hit
+-- fourteen pixels. It can -- but the slider track is FOUR, and a four pixel
+-- target is why the sliders felt unresponsive: most of the presses aimed at one
+-- landed on the row behind it and did nothing at all. A pointer gets a smaller
+-- pad than a finger, not no pad.
+--
+-- `minimum` overrides the platform floor for a control that knows its own.
+function Controls.TouchTarget(host: Host, target: GuiObject, scope: Types.Scope, minimum: number?): GuiObject?
     local library = host.Library
-    if not library.IsMobile then
-        return nil
-    end
-    local minimum = Metrics.Touch.MinTarget
+    local floor = minimum or (if library.IsMobile then Metrics.Touch.MinTarget else Metrics.Touch.MinPointerTarget)
     local height = target.Size.Y.Offset
-    if height >= minimum then
+    if height >= floor then
         return nil
     end
-    local overhang = (minimum - height) / 2
+    local overhang = (floor - height) / 2
     return library:Create("TextButton", {
-        Name = "TouchTarget",
+        Name = "PointerTarget",
         Text = "",
         AutoButtonColor = false,
         BackgroundTransparency = 1,
@@ -4614,6 +4688,7 @@ function Label.new(host: Controls.Host, parent: Instance, options: Options?, sco
         Text = self.Text,
         Size = UDim2.fromScale(1, 1),
         TextWrapped = self.Wrap,
+        TextYAlignment = Enum.TextYAlignment.Center,
         TextTruncate = if self.Wrap then Enum.TextTruncate.None else Enum.TextTruncate.AtEnd,
         ZIndex = Materials.Z.Text,
         Parent = holder,
@@ -4653,7 +4728,12 @@ function Label._Measure(self: Label)
         local measured = typography:Measure(self.Text, role, self._Width).Y
         height = math.max(line, math.ceil(measured) + Metrics.Label.LineGap)
     end
-    Element.SetHeight(self, height)
+    -- A label is a row in the card, not a bare line of text dropped into one.
+    -- Measured at exactly its line height it sits flush against whatever is
+    -- above and below it, and two adjacent labels read as one overlapping
+    -- string. The padding is inside the row, so the text stays vertically
+    -- centred and the hairline between rows still lands at the boundary.
+    Element.SetHeight(self, height + Metrics.Label.PaddingY * 2)
 end
 
 function Label._OnWidth(self: Label, width: number)
@@ -5565,6 +5645,7 @@ export type Dropdown = typeof(setmetatable(
         _VisibleCount: number,
         _Dirty: boolean,
         _OpenScope: Types.Scope?,
+        _PopupHovered: (() -> boolean)?,
     },
     Dropdown
 ))
@@ -5660,6 +5741,7 @@ function Dropdown.new(host: Controls.Host, parent: Instance, options: Options?, 
         _VisibleCount = 0,
         _Dirty = true,
         _OpenScope = nil,
+        _PopupHovered = nil,
     }, Dropdown)
 
     self:_Build(parent, config)
@@ -6000,7 +6082,8 @@ function Dropdown._UpdateVisual(self: Dropdown, duration: number)
         context.Animator,
         self.Chevron.Frame,
         { Rotation = if self.IsOpen then 180 else 0 },
-        if duration > 0 then Metrics.Motion.Chevron else 0
+        if duration > 0 then Metrics.Motion.Chevron else 0,
+        "Travel"
     )
 end
 
@@ -6244,6 +6327,9 @@ function Dropdown._EnsurePopup(self: Dropdown): boolean
     })
     popup.Instance.Active = true
     self._Popup = popup
+    -- See Popup.TrackHover: the rectangle test alone loses the click that lands
+    -- in the frame after a reposition or a filter reflow.
+    self._PopupHovered = Popup.TrackHover(library, popup.Instance, scope)
 
     local listTop = config.PopupPadding
     if self.Searchable then
@@ -6454,6 +6540,10 @@ function Dropdown.ContainsPoint(self: Dropdown, point: Vector2): boolean
         return false
     end
     if Popup.Contains(self.Trigger.Instance, point) then
+        return true
+    end
+    local hovered = self._PopupHovered
+    if hovered and hovered() then
         return true
     end
     local popup = self._Popup
@@ -7552,7 +7642,12 @@ function Toggle.new(host: any, parent: Instance, options: any, scope: any): any
             self.Host.Context.Animator,
             self.Mark,
             { Position = UDim2.new(0, if switch and on then width - knob - inset else inset, 0.5, 0) },
-            Metrics.Motion.Knob
+            Metrics.Motion.Knob,
+            -- The knob is an object being pushed from one end of the track to
+            -- the other, not a value being reported. It arrives with a trace of
+            -- momentum, which is the whole difference between a switch that
+            -- feels flicked and one that feels faded.
+            "Travel"
         )
         -- The knob is light against a dark track when off, and dark against the
         -- accent when on, so it stays a distinct object in both states.
@@ -7706,13 +7801,32 @@ function Slider.new(host: any, parent: Instance, options: any, scope: any): any
         ZIndex = Materials.Z.Edge,
         Parent = self.Track,
     }, self.Resources)
+    -- Scale, not offset: the thumb grows under the pointer, and a fixed offset
+    -- radius would turn it into a rounded square on the way.
     host.Library:Create("UICorner", {
-        CornerRadius = UDim.new(0, math.floor(geometry.ThumbSize / 2)),
+        CornerRadius = UDim.new(0.5, 0),
         Parent = self.Thumb,
     }, self.Resources)
     host.Library:RegisterProperty(self.Thumb, { BackgroundColor3 = "Accent.Base" }, self.Resources)
 
     Element.SetHeight(self, Metrics.Row.TallHeight)
+    self.Dragging = false
+
+    -- The thumb is the only part of a slider that reports the control's state,
+    -- so it reports all three of them. A track that never acknowledges the
+    -- pointer is a track the user cannot tell is live, which is most of why
+    -- these felt unresponsive even when they were working.
+    local function thumbSize(): number
+        if self.Disabled then
+            return geometry.ThumbSize
+        elseif self.Dragging then
+            return geometry.ThumbPressed
+        elseif self.Hovered then
+            return geometry.ThumbHover
+        end
+        return geometry.ThumbSize
+    end
+
     function self:Refresh()
         ValueControl.Refresh(self)
         if self.Destroyed then
@@ -7723,6 +7837,14 @@ function Slider.new(host: any, parent: Instance, options: any, scope: any): any
         self.Fill.BackgroundTransparency = if self.Disabled then 0.6 else 0
         self.Thumb.Position = UDim2.fromScale(alpha, 0.5)
         self.Thumb.BackgroundTransparency = if self.Disabled then 0.6 else 0
+        local size = thumbSize()
+        Materials.Animate(
+            host.Context.Animator,
+            self.Thumb,
+            { Size = UDim2.fromOffset(size, size) },
+            Metrics.Motion.Hover,
+            "Travel"
+        )
         self.Entry:SetDisabled(self.Disabled)
         if not self.Entry.Focused then
             self.Entry:_Push(self.Prefix .. string.format("%." .. self.Rounding .. "f", self.Value) .. self.Suffix)
@@ -7763,31 +7885,69 @@ function Slider.new(host: any, parent: Instance, options: any, scope: any): any
     host.Library:Connect(self.Entry.Box.FocusLost, function()
         self:Refresh()
     end, self.Resources)
-    -- On a touch device the drag starts from an invisible pad taller than the
-    -- track. It is full width, so the position arithmetic is unchanged; only
-    -- the region that accepts a finger is larger.
-    self.TouchTarget = Controls.TouchTarget(host, self.Track, self.Resources)
-    local grip = self.TouchTarget or self.Track
-    host.Library:Connect(grip.InputBegan, function(input)
-        if self:CanInteract() and host.Library:IsPrimaryPointer(input) then
-            host:BeginInteraction()
-            self:Drag(self.Track, input, function(x)
-                self:SetValue(self.Min + x * (self.Max - self.Min))
-            end)
+    -- The drag starts from an invisible pad taller than the track, on every
+    -- device. The pad is full width, so the position arithmetic is unchanged;
+    -- only the region that accepts a pointer is larger. Without it the target
+    -- is the four pixel track itself, and most presses aimed at a slider miss.
+    self.TouchTarget = Controls.TouchTarget(host, self.Track, self.Resources, geometry.GrabHeight)
+    -- Both surfaces are bound, not just the pad. The pad is what the user
+    -- actually hits, but the track is still a real button underneath it, and a
+    -- press that reaches the track directly must behave identically rather than
+    -- depending on which of the two the engine happened to route the input to.
+    local grips: { any } = { self.Track }
+    if self.TouchTarget then
+        table.insert(grips, self.TouchTarget)
+    end
+
+    for _, grip in grips do
+        host.Library:Connect(grip.MouseEnter, function()
+            self.Hovered = true
+            self:Refresh()
+        end, self.Resources)
+        host.Library:Connect(grip.MouseLeave, function()
+            self.Hovered = false
+            self:Refresh()
+        end, self.Resources)
+
+        host.Library:Connect(grip.InputBegan, function(input)
+            if self:CanInteract() and host.Library:IsPrimaryPointer(input) then
+                host:BeginInteraction()
+                self.Dragging = true
+                self:Refresh()
+                self:Drag(self.Track, input, function(x)
+                    self:SetValue(self.Min + x * (self.Max - self.Min))
+                end)
+                -- Drag() owns a scope for the pointer session; the thumb has to
+                -- stand down when that session ends however it ends.
+                if self._Drag then
+                    self._Drag:Add(function()
+                        self.Dragging = false
+                        if not self.Destroyed then
+                            self:Refresh()
+                        end
+                    end)
+                end
+            end
+        end, self.Resources)
+
+        -- Arrow keys nudge by one rounding step; the wheel does the same. A slider
+        -- the pointer is already over is a slider the wheel should adjust.
+        local function nudge(direction: number)
+            if self:CanInteract() and direction ~= 0 then
+                self:SetValue(self.Value + direction * 10 ^ -self.Rounding)
+            end
         end
-    end, self.Resources)
-    host.Library:Connect(self.Track.InputBegan, function(input)
-        if not self:CanInteract() then
-            return
-        end
-        local direction = if input.KeyCode == Enum.KeyCode.Left
-            then -1
-            elseif input.KeyCode == Enum.KeyCode.Right then 1
-            else 0
-        if direction ~= 0 then
-            self:SetValue(self.Value + direction * 10 ^ -self.Rounding)
-        end
-    end, self.Resources)
+        host.Library:Connect(grip.InputBegan, function(input)
+            nudge(
+                if input.KeyCode == Enum.KeyCode.Left then -1 elseif input.KeyCode == Enum.KeyCode.Right then 1 else 0
+            )
+        end, self.Resources)
+        host.Library:Connect(grip.InputChanged, function(input)
+            if input.UserInputType == Enum.UserInputType.MouseWheel then
+                nudge(if input.Position.Z > 0 then 1 elseif input.Position.Z < 0 then -1 else 0)
+            end
+        end, self.Resources)
+    end
     self:Refresh()
     return self
 end
@@ -7826,6 +7986,8 @@ function ContextMenu.new(host: any, trigger: GuiObject, options: any, parentScop
     self.Frame = self.Surface.Instance
     self.Frame.Visible = false
     self.Frame.ClipsDescendants = true
+    self.Frame.Active = true
+    self.Hovered = Popup.TrackHover(host.Library, self.Frame, scope)
     scope:Add(function()
         self:Close()
         self.Destroyed = true
@@ -7890,6 +8052,9 @@ function ContextMenu.Toggle(self: any)
     end
 end
 function ContextMenu.ContainsPoint(self: any, point: Vector2): boolean
+    if self.Hovered and self.Hovered() then
+        return true
+    end
     return Popup.Contains(self.Frame, point) or Popup.Contains(self.Trigger, point)
 end
 function ContextMenu.SetSize(self: any, width: number, height: number)
@@ -9165,6 +9330,13 @@ function Groupbox.new(host: Controls.Host, params: Params): Groupbox
         Parent = params.Parent,
     }, resources) :: Frame
 
+    -- A card does not clip. Its corner radius already rounds its own background,
+    -- and ClipsDescendants only affects CHILDREN -- children which are rows
+    -- inset sixteen pixels from the sides and so never reach a corner anyway.
+    -- All the clipping actually did was make a card whose measured height came
+    -- out one row short silently EAT that row, which is why controls were
+    -- disappearing off the bottom of a box rather than overflowing visibly.
+    -- A layout bug should be visible, not invisible.
     local holder = Materials.CreateSurface(host.Context, {
         Name = "Card",
         Kind = "Card",
@@ -9173,6 +9345,7 @@ function Groupbox.new(host: Controls.Host, params: Params): Groupbox
         Size = UDim2.new(1, 0, 0, 0),
         Radius = geometry.Radius,
         ZIndex = Materials.Z.Structure,
+        Clip = false,
     })
 
     local self: Groupbox = setmetatable({
@@ -9546,13 +9719,24 @@ function Groupbox.SetVisible(self: Groupbox, visible: boolean): Groupbox
             end
         end
     end
+    -- The WRAPPER is what the column's list layout stacks, and it holds both the
+    -- external section label and the card. Hiding only the card left the label
+    -- on screen with nothing under it and left the wrapper's full height in the
+    -- column as a hole -- which is a good part of the dead space in a page with
+    -- conditional cards in it.
+    self.Wrapper.Visible = flag
     self.Holder.Instance.Visible = flag
+    if self.SectionLabel then
+        self.SectionLabel.Visible = flag and self.Name ~= ""
+    end
     return self
 end
 
 function Groupbox.SetOrder(self: Groupbox, order: number): Groupbox
     assert(not self.Destroyed, "Groupbox is destroyed")
-    self.Holder.Instance.LayoutOrder = order
+    -- Same reason: the column stacks wrappers. Ordering the card inside its own
+    -- wrapper, where it is the only child, did nothing at all.
+    self.Wrapper.LayoutOrder = order
     return self
 end
 
@@ -9969,12 +10153,23 @@ end
 function Shell._BeginPointerSession(self: Shell, input: InputObject, step: (delta: Vector2) -> ())
     local library = self.Library
     local runtime = library.Runtime
-    if not runtime or self._DragScope then
+    if not runtime then
         return
     end
     local scale = library.DPIScale
     if scale <= 0 then
         return
+    end
+
+    -- A previous session that never saw its release -- the button came up over
+    -- another layer, the executor dropped the event, the game took the input --
+    -- used to make this function return, and the window then refused to drag
+    -- for the rest of the session. A new press is unambiguous evidence that the
+    -- old session is over, so it retires the old one instead of being refused
+    -- by it. This is the "sometimes dragging just does not work" bug.
+    if self._DragScope then
+        self._DragScope:Destroy()
+        self._DragScope = nil
     end
 
     local origin = Vector2.new(input.Position.X, input.Position.Y)
@@ -10006,6 +10201,20 @@ function Shell._BeginPointerSession(self: Shell, input: InputObject, step: (delt
 
     -- Alt-tabbing away mid-drag must not leave the window following the cursor.
     library:Connect(runtime.Input.WindowFocusReleased, finish, scope)
+
+    -- The release event is the primary end condition; this is the backstop for
+    -- when it never arrives. Polling the button itself cannot be missed, and it
+    -- costs one boolean read per frame only while a drag is actually running.
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        library:Connect(runtime.Render.Heartbeat, function()
+            local ok, held = pcall(function()
+                return runtime.Input:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+            end)
+            if ok and not held then
+                finish()
+            end
+        end, scope)
+    end
 end
 
 function Shell._BindDrag(self: Shell, handle: GuiObject)
@@ -10267,7 +10476,13 @@ function Tab._Refresh(self: Tab, duration: number)
     local container = if self.Active then 0 elseif self.Disabled then 1 elseif self.Hovered then 0.88 else 1
     Materials.Animate(animator, self.Surface.Instance, { BackgroundTransparency = container }, duration)
 
-    Materials.Animate(animator, self.Indicator, { BackgroundTransparency = if self.Active then 0 else 1 }, duration)
+    Materials.Animate(
+        animator,
+        self.Indicator,
+        { BackgroundTransparency = if self.Active then 0 else 1 },
+        duration,
+        "Emerge"
+    )
 
     -- The glyph reads against whatever is behind it: the accent fill when
     -- active, the dock surface otherwise.
@@ -11232,23 +11447,32 @@ function Shell.new(library: any, options: Options?): Shell
         Name = "MascotDrag",
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Position = UDim2.fromOffset(window.OuterPadding, window.OuterPadding),
-        Size = UDim2.fromOffset(dock.Width, dock.PaddingTop + dock.MascotSize),
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.fromOffset(
+            window.OuterPadding + dock.Width,
+            window.OuterPadding + dock.PaddingTop + dock.MascotSize
+        ),
         ZIndex = Materials.Z.Overlay,
         Active = true,
         Parent = self.Window.Instance,
     }, resources) :: Frame
 
-    -- The drag strip covers the content's top padding band only. It stops
-    -- short of the sub-tab labels rather than reaching under them, so it can
-    -- never swallow a click meant for navigation, and it does not need to
-    -- follow the header's height when a section without a strip is open.
+    -- The drag strip covers the whole top band of the content region: the top
+    -- padding AND the row the sub-tab strip lives on. Eighteen pixels of
+    -- padding was a strip the user had to aim at, which is why grabbing "the
+    -- header" so often did nothing at all.
+    --
+    -- It does not need to dodge the tab labels. Those labels are descendants of
+    -- Content, this handle is a sibling of Content at a lower ZIndex, and
+    -- ZIndexBehavior.Sibling therefore renders every one of them above it -- so
+    -- a click on a label reaches the label and a click on the air beside it
+    -- reaches the drag strip, which is the behaviour a title bar has.
     local headerHandle = library:Create("Frame", {
         Name = "HeaderDrag",
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Position = UDim2.fromOffset(originX, 0),
-        Size = UDim2.new(1, -originX, 0, content.PaddingTop),
+        Size = UDim2.new(1, -originX, 0, content.PaddingTop + Metrics.HeaderTabs.Height),
         ZIndex = Materials.Z.Base,
         Active = true,
         Parent = self.Window.Instance,

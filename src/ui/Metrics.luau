@@ -140,8 +140,9 @@ Metrics.HeaderTabs = {
     -- the two share a baseline exactly.
     RuleThickness = 1,
     -- 0 left-aligns the strip to the content body, 0.5 centres it, 1 right-
-    -- aligns it. Sub-navigation is left-aligned to the page it governs.
-    Alignment = 0,
+    -- aligns it. Centred: the strip reads as the page set's own navigation
+    -- rather than as a ragged left-hand list that ends in dead space.
+    Alignment = 0.5,
 }
 
 --// Tabboxes: the in-card tab strip a Container draws across the top of its own
@@ -194,8 +195,13 @@ Metrics.Groupbox = {
     -- each row owns its own breathing room through its height.
     PaddingLeft = 16,
     PaddingRight = 16,
-    PaddingTop = 0,
-    PaddingBottom = 0,
+    -- Rows are separated by a hairline at their shared boundary, so the list
+    -- spacing between them is zero. The card still owes its FIRST and LAST row
+    -- air against its own edge: without it the top row's ascenders are clipped
+    -- by the card's corner radius, which is exactly the "text cut off at the
+    -- top of the box" artifact.
+    PaddingTop = 6,
+    PaddingBottom = 6,
     ElementSpacing = 0,
 
     -- Between two cards stacked in the same column, label included.
@@ -236,6 +242,13 @@ Metrics.Toggle = {
 Metrics.Slider = {
     TrackThickness = 4,
     ThumbSize = 11,
+    -- The thumb grows under the pointer. Feedback that the control is live
+    -- before the value has moved at all.
+    ThumbHover = 13,
+    ThumbPressed = 15,
+    -- The invisible band that actually accepts the pointer, centred on the
+    -- visible track. A mouse can hit fourteen pixels; it should not have to.
+    GrabHeight = 24,
     -- Air between the label line and the track.
     LabelGap = 8,
     ValuePillWidth = 36,
@@ -259,6 +272,10 @@ Metrics.Button = {
 Metrics.Label = {
     -- Extra height a wrapped label adds per line beyond what measurement reports.
     LineGap = 0,
+    -- Air above and below a label's text inside its own row. A label measured
+    -- at exactly its line height sits flush against the row above and below it,
+    -- which reads as two overlapping strings rather than two rows.
+    PaddingY = 7,
 }
 
 --// Dividers. Structure without another box: a hairline with deliberate air
@@ -369,17 +386,34 @@ Metrics.Text = {
 -- library at 1.5 scale is already past that.
 Metrics.Touch = {
     MinTarget = 30,
+    -- The same idea for a mouse. Smaller than the touch floor, because a
+    -- pointer is precise, but never as small as the visible hairline.
+    MinPointerTarget = 22,
 }
 
 --// Motion (seconds). Restrained by intent; 0 disables a transition.
 Metrics.Motion = {
-    Hover = 0.09,
-    Select = 0.11,
-    Focus = 0.09,
-    Popup = 0.10,
-    Chevron = 0.12,
+    Hover = 0.12,
+    Select = 0.18,
+    Focus = 0.12,
+    Popup = 0.16,
+    Chevron = 0.18,
     -- The toggle knob and the dock indicator travel; they do not pop.
-    Knob = 0.13,
+    Knob = 0.22,
+}
+
+--// Motion curves. A tween's shape carries as much of its character as its
+-- duration does, and one curve applied to everything is why an interface reads
+-- as flat however long the tweens are.
+--
+-- Named by intent, resolved in Materials.Animate. A property change that is a
+-- state report (a colour, a transparency) settles; a property change that is a
+-- physical movement (a knob, an indicator, a thumb) overshoots very slightly
+-- and comes back, which is what makes it read as an object rather than a value.
+Metrics.Curve = {
+    Settle = { Style = Enum.EasingStyle.Quint, Direction = Enum.EasingDirection.Out },
+    Travel = { Style = Enum.EasingStyle.Back, Direction = Enum.EasingDirection.Out },
+    Emerge = { Style = Enum.EasingStyle.Cubic, Direction = Enum.EasingDirection.Out },
 }
 
 --// Derived geometry. Functions rather than cached values so edits above stay

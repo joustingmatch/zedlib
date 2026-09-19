@@ -294,8 +294,8 @@ end
 
 --// Touch targets ------------------------------------------------------------
 
--- An invisible interaction area over a control that is too thin to hit with a
--- finger, returned as the thing to bind input to instead of the visible one.
+-- An invisible interaction area over a control that is too thin to hit, returned
+-- as the thing to bind input to instead of the visible one.
 --
 -- It is a child of the target and is full width, so the horizontal arithmetic a
 -- drag does against it is identical to the arithmetic against the target. Only
@@ -303,23 +303,23 @@ end
 -- displacing anything, because rows do not clip and layout heights are declared
 -- by the control rather than measured from its descendants.
 --
--- Returns nil on a device that is not touch-driven, and the caller then binds to
--- the visible control as before. There is deliberately no way to turn this on
--- for a mouse: a mouse can hit fourteen pixels, and an oversized invisible
--- button would only steal hover from the row above.
-function Controls.TouchTarget(host: Host, target: GuiObject, scope: Types.Scope): GuiObject?
+-- This used to return nil for a mouse, on the reasoning that a mouse can hit
+-- fourteen pixels. It can -- but the slider track is FOUR, and a four pixel
+-- target is why the sliders felt unresponsive: most of the presses aimed at one
+-- landed on the row behind it and did nothing at all. A pointer gets a smaller
+-- pad than a finger, not no pad.
+--
+-- `minimum` overrides the platform floor for a control that knows its own.
+function Controls.TouchTarget(host: Host, target: GuiObject, scope: Types.Scope, minimum: number?): GuiObject?
     local library = host.Library
-    if not library.IsMobile then
-        return nil
-    end
-    local minimum = Metrics.Touch.MinTarget
+    local floor = minimum or (if library.IsMobile then Metrics.Touch.MinTarget else Metrics.Touch.MinPointerTarget)
     local height = target.Size.Y.Offset
-    if height >= minimum then
+    if height >= floor then
         return nil
     end
-    local overhang = (minimum - height) / 2
+    local overhang = (floor - height) / 2
     return library:Create("TextButton", {
-        Name = "TouchTarget",
+        Name = "PointerTarget",
         Text = "",
         AutoButtonColor = false,
         BackgroundTransparency = 1,

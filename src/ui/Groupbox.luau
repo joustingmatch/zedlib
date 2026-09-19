@@ -106,6 +106,13 @@ function Groupbox.new(host: Controls.Host, params: Params): Groupbox
         Parent = params.Parent,
     }, resources) :: Frame
 
+    -- A card does not clip. Its corner radius already rounds its own background,
+    -- and ClipsDescendants only affects CHILDREN -- children which are rows
+    -- inset sixteen pixels from the sides and so never reach a corner anyway.
+    -- All the clipping actually did was make a card whose measured height came
+    -- out one row short silently EAT that row, which is why controls were
+    -- disappearing off the bottom of a box rather than overflowing visibly.
+    -- A layout bug should be visible, not invisible.
     local holder = Materials.CreateSurface(host.Context, {
         Name = "Card",
         Kind = "Card",
@@ -114,6 +121,7 @@ function Groupbox.new(host: Controls.Host, params: Params): Groupbox
         Size = UDim2.new(1, 0, 0, 0),
         Radius = geometry.Radius,
         ZIndex = Materials.Z.Structure,
+        Clip = false,
     })
 
     local self: Groupbox = setmetatable({
@@ -487,13 +495,24 @@ function Groupbox.SetVisible(self: Groupbox, visible: boolean): Groupbox
             end
         end
     end
+    -- The WRAPPER is what the column's list layout stacks, and it holds both the
+    -- external section label and the card. Hiding only the card left the label
+    -- on screen with nothing under it and left the wrapper's full height in the
+    -- column as a hole -- which is a good part of the dead space in a page with
+    -- conditional cards in it.
+    self.Wrapper.Visible = flag
     self.Holder.Instance.Visible = flag
+    if self.SectionLabel then
+        self.SectionLabel.Visible = flag and self.Name ~= ""
+    end
     return self
 end
 
 function Groupbox.SetOrder(self: Groupbox, order: number): Groupbox
     assert(not self.Destroyed, "Groupbox is destroyed")
-    self.Holder.Instance.LayoutOrder = order
+    -- Same reason: the column stacks wrappers. Ordering the card inside its own
+    -- wrapper, where it is the only child, did nothing at all.
+    self.Wrapper.LayoutOrder = order
     return self
 end
 

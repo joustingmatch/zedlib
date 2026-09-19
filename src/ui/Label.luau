@@ -89,6 +89,7 @@ function Label.new(host: Controls.Host, parent: Instance, options: Options?, sco
         Text = self.Text,
         Size = UDim2.fromScale(1, 1),
         TextWrapped = self.Wrap,
+        TextYAlignment = Enum.TextYAlignment.Center,
         TextTruncate = if self.Wrap then Enum.TextTruncate.None else Enum.TextTruncate.AtEnd,
         ZIndex = Materials.Z.Text,
         Parent = holder,
@@ -128,7 +129,12 @@ function Label._Measure(self: Label)
         local measured = typography:Measure(self.Text, role, self._Width).Y
         height = math.max(line, math.ceil(measured) + Metrics.Label.LineGap)
     end
-    Element.SetHeight(self, height)
+    -- A label is a row in the card, not a bare line of text dropped into one.
+    -- Measured at exactly its line height it sits flush against whatever is
+    -- above and below it, and two adjacent labels read as one overlapping
+    -- string. The padding is inside the row, so the text stays vertically
+    -- centred and the hairline between rows still lands at the boundary.
+    Element.SetHeight(self, height + Metrics.Label.PaddingY * 2)
 end
 
 function Label._OnWidth(self: Label, width: number)

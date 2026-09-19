@@ -566,7 +566,7 @@ end)
 
 --// Touch -------------------------------------------------------------------
 
-test("thin controls gain a hit area on a touch device and not otherwise", function()
+test("thin controls gain a hit area, sized for the pointing device", function()
     local function build(platform)
         counter += 1
         local library = Library.new({
@@ -587,15 +587,22 @@ test("thin controls gain a hit area on a touch device and not otherwise", functi
         return library, slider
     end
 
+    -- A mouse gets a pad too. The slider track is four pixels tall: that is a
+    -- reasonable thing to look at and an unreasonable thing to hit with
+    -- anything, which is why the sliders read as unresponsive when only a
+    -- phone was given one. A pointer simply gets a smaller pad than a finger.
     local desktop, desktopSlider = build("Windows")
     assert(not desktop.IsMobile, "Windows was treated as mobile")
-    assert(desktopSlider.TouchTarget == nil, "a mouse device got a touch pad")
-    desktop:Unload()
+    local mousePad = desktopSlider.TouchTarget
+    assert(mousePad, "a mouse device got no hit area at all")
+    assert(mousePad.Size.X.Scale == 1 and mousePad.Size.X.Offset == 0, "the mouse pad is not full width")
 
     local phone, phoneSlider = build("Android")
     assert(phone.IsMobile, "Android was not treated as mobile")
     local pad = phoneSlider.TouchTarget
     assert(pad, "no touch pad on a phone")
+    assert(pad.Size.Y.Offset >= mousePad.Size.Y.Offset, "a finger got a smaller target than a pointer")
+    desktop:Unload()
     -- Full width, so the drag arithmetic is unchanged, and taller than the
     -- track it covers, centred on it.
     assert(pad.Size.X.Scale == 1 and pad.Size.X.Offset == 0, "the pad is not full width")

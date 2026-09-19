@@ -136,7 +136,12 @@ function Toggle.new(host: any, parent: Instance, options: any, scope: any): any
             self.Host.Context.Animator,
             self.Mark,
             { Position = UDim2.new(0, if switch and on then width - knob - inset else inset, 0.5, 0) },
-            Metrics.Motion.Knob
+            Metrics.Motion.Knob,
+            -- The knob is an object being pushed from one end of the track to
+            -- the other, not a value being reported. It arrives with a trace of
+            -- momentum, which is the whole difference between a switch that
+            -- feels flicked and one that feels faded.
+            "Travel"
         )
         -- The knob is light against a dark track when off, and dark against the
         -- accent when on, so it stays a distinct object in both states.

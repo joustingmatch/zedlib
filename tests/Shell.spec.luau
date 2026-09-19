@@ -220,7 +220,10 @@ test("the shell matches the reference geometry", function()
             - M.Content.StrokeGutter * 2
     )
     eq("the scroll region clips", if page.Content.ClipsDescendants then 1 else 0, 1)
-    eq("the card surface clips", if left.Holder.Instance.ClipsDescendants then 1 else 0, 1)
+    -- A card deliberately does NOT clip. Its rows are inset from its corners, so
+    -- clipping bought nothing visually and cost a row whenever a height came out
+    -- short: the row vanished instead of overflowing where it could be seen.
+    eq("the card surface does not clip", if left.Holder.Instance.ClipsDescendants then 1 else 0, 0)
     -- A card must never be wider than the column holding it, at any window size.
     for _, size in { { 640, 360 }, { 840, 530 }, { 1280, 800 } } do
         shell:SetSize(size[1], size[2])

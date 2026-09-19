@@ -212,12 +212,23 @@ end
 function Shell._BeginPointerSession(self: Shell, input: InputObject, step: (delta: Vector2) -> ())
     local library = self.Library
     local runtime = library.Runtime
-    if not runtime or self._DragScope then
+    if not runtime then
         return
     end
     local scale = library.DPIScale
     if scale <= 0 then
         return
+    end
+
+    -- A previous session that never saw its release -- the button came up over
+    -- another layer, the executor dropped the event, the game took the input --
+    -- used to make this function return, and the window then refused to drag
+    -- for the rest of the session. A new press is unambiguous evidence that the
+    -- old session is over, so it retires the old one instead of being refused
+    -- by it. This is the "sometimes dragging just does not work" bug.
+    if self._DragScope then
+        self._DragScope:Destroy()
+        self._DragScope = nil
     end
 
     local origin = Vector2.new(input.Position.X, input.Position.Y)
@@ -249,6 +260,20 @@ function Shell._BeginPointerSession(self: Shell, input: InputObject, step: (delt
 
     -- Alt-tabbing away mid-drag must not leave the window following the cursor.
     library:Connect(runtime.Input.WindowFocusReleased, finish, scope)
+
+    -- The release event is the primary end condition; this is the backstop for
+    -- when it never arrives. Polling the button itself cannot be missed, and it
+    -- costs one boolean read per frame only while a drag is actually running.
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        library:Connect(runtime.Render.Heartbeat, function()
+            local ok, held = pcall(function()
+                return runtime.Input:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+            end)
+            if ok and not held then
+                finish()
+            end
+        end, scope)
+    end
 end
 
 function Shell._BindDrag(self: Shell, handle: GuiObject)
@@ -510,7 +535,13 @@ function Tab._Refresh(self: Tab, duration: number)
     local container = if self.Active then 0 elseif self.Disabled then 1 elseif self.Hovered then 0.88 else 1
     Materials.Animate(animator, self.Surface.Instance, { BackgroundTransparency = container }, duration)
 
-    Materials.Animate(animator, self.Indicator, { BackgroundTransparency = if self.Active then 0 else 1 }, duration)
+    Materials.Animate(
+        animator,
+        self.Indicator,
+        { BackgroundTransparency = if self.Active then 0 else 1 },
+        duration,
+        "Emerge"
+    )
 
     -- The glyph reads against whatever is behind it: the accent fill when
     -- active, the dock surface otherwise.
@@ -1475,23 +1506,32 @@ function Shell.new(library: any, options: Options?): Shell
         Name = "MascotDrag",
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Position = UDim2.fromOffset(window.OuterPadding, window.OuterPadding),
-        Size = UDim2.fromOffset(dock.Width, dock.PaddingTop + dock.MascotSize),
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.fromOffset(
+            window.OuterPadding + dock.Width,
+            window.OuterPadding + dock.PaddingTop + dock.MascotSize
+        ),
         ZIndex = Materials.Z.Overlay,
         Active = true,
         Parent = self.Window.Instance,
     }, resources) :: Frame
 
-    -- The drag strip covers the content's top padding band only. It stops
-    -- short of the sub-tab labels rather than reaching under them, so it can
-    -- never swallow a click meant for navigation, and it does not need to
-    -- follow the header's height when a section without a strip is open.
+    -- The drag strip covers the whole top band of the content region: the top
+    -- padding AND the row the sub-tab strip lives on. Eighteen pixels of
+    -- padding was a strip the user had to aim at, which is why grabbing "the
+    -- header" so often did nothing at all.
+    --
+    -- It does not need to dodge the tab labels. Those labels are descendants of
+    -- Content, this handle is a sibling of Content at a lower ZIndex, and
+    -- ZIndexBehavior.Sibling therefore renders every one of them above it -- so
+    -- a click on a label reaches the label and a click on the air beside it
+    -- reaches the drag strip, which is the behaviour a title bar has.
     local headerHandle = library:Create("Frame", {
         Name = "HeaderDrag",
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Position = UDim2.fromOffset(originX, 0),
-        Size = UDim2.new(1, -originX, 0, content.PaddingTop),
+        Size = UDim2.new(1, -originX, 0, content.PaddingTop + Metrics.HeaderTabs.Height),
         ZIndex = Materials.Z.Base,
         Active = true,
         Parent = self.Window.Instance,

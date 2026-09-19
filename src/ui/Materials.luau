@@ -186,7 +186,16 @@ local function setDirect(library: any, instance: Instance, properties: { [string
     end
 end
 
-function Materials.Animate(animator: Animator, instance: Instance, properties: { [string]: any }, duration: number)
+-- `curve` names a shape from Metrics.Curve rather than supplying one, so the
+-- library has three motion characters in one place instead of a TweenInfo
+-- improvised at every call site. Omitted, a change settles.
+function Materials.Animate(
+    animator: Animator,
+    instance: Instance,
+    properties: { [string]: any },
+    duration: number,
+    curve: string?
+)
     local previous = animator.Slots[instance]
     if previous then
         previous()
@@ -204,7 +213,8 @@ function Materials.Animate(animator: Animator, instance: Instance, properties: {
         return
     end
 
-    local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local shape = Metrics.Curve[curve or "Settle"] or Metrics.Curve.Settle
+    local info = TweenInfo.new(duration, shape.Style, shape.Direction)
     local ok, tween = pcall(function()
         return TweenService:Create(instance, info, properties)
     end)

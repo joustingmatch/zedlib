@@ -247,6 +247,36 @@ function Popup.GuiInset(): Vector2
     return Vector2.zero
 end
 
+-- Keeps a live "the pointer is over this surface" flag on a frame, and returns
+-- a reader for it.
+--
+-- The geometric hit test below is correct and still the primary answer, but it
+-- reads AbsolutePosition, and AbsolutePosition is a RENDERED value: it is one
+-- frame stale every time a popup has just been placed, resized, reflowed by a
+-- search filter, or carried along by a window drag. In that one frame an
+-- outside-click handler tests the click against where the popup used to be,
+-- decides the click was outside, and closes the popup the user was aiming at.
+-- That is the "I click an item and it closes instead of selecting" bug.
+--
+-- MouseEnter/MouseLeave are maintained by the engine against the geometry it
+-- actually rendered, so they cannot be stale in the way a coordinate read can.
+-- The two together: hover answers for a mouse, the rectangle answers for touch.
+function Popup.TrackHover(library: any, frame: GuiObject, scope: Types.Scope): () -> boolean
+    local inside = false
+    library:Connect(frame.MouseEnter, function()
+        inside = true
+    end, scope)
+    library:Connect(frame.MouseLeave, function()
+        inside = false
+    end, scope)
+    scope:Add(function()
+        inside = false
+    end)
+    return function(): boolean
+        return inside and frame.Visible
+    end
+end
+
 function Popup.PointerPoint(input: InputObject): Vector2
     return Vector2.new(input.Position.X, input.Position.Y) + Popup.GuiInset()
 end
